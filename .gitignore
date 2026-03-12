@@ -1,0 +1,22 @@
+# Rust / Tauri
+src-tauri/target/
+src-tauri/binaries/
+src-tauri/gen/schemas/
+
+# Node
+node_modules/
+
+# Vite build output
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Env
+.env

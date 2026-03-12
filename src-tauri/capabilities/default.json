@@ -1,0 +1,30 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicegui-org/nicegui/main/nicegui/static/tauri-v2/schema.json",
+  "identifier": "default",
+  "description": "Default permissions for JumpCutter",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "shell:default",
+    "shell:allow-execute",
+    "shell:allow-spawn",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "ffmpeg",
+          "cmd": "binaries/ffmpeg",
+          "args": true
+        },
+        {
+          "name": "ffprobe",
+          "cmd": "binaries/ffprobe",
+          "args": true
+        }
+      ]
+    }
+  ]
+}
