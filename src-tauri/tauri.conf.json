@@ -14,10 +14,10 @@
     "windows": [
       {
         "title": "JumpCutter",
-        "width": 600,
-        "height": 780,
+        "width": 900,
+        "height": 820,
         "resizable": true,
-        "minWidth": 500,
+        "minWidth": 700,
         "minHeight": 600,
         "decorations": true,
         "transparent": false

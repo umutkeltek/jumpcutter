@@ -39,7 +39,7 @@
   {#if mode === "speed"}
     <div class="setting">
       <div class="setting-header">
-        <label>Speed Multiplier</label>
+        <label title="How fast to play silent segments instead of removing them.">Silence speed</label>
         <span class="value">{silenceSpeed.toFixed(1)}x</span>
       </div>
       <input
@@ -54,7 +54,7 @@
 
   <div class="setting">
     <div class="setting-header">
-      <label>Min Loud Duration</label>
+      <label title="Sounds shorter than this will be treated as silence and removed.">Ignore short sounds</label>
       <span class="value">{minLoudDuration.toFixed(1)}s</span>
     </div>
     <input

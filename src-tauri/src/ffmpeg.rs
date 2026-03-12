@@ -5,7 +5,7 @@ use tauri::{AppHandle, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
-use crate::types::ProcessEvent;
+use crate::types::{AnalysisResult, ProcessEvent};
 
 // ── Path resolution ──────────────────────────────────
 
@@ -432,6 +432,193 @@ pub async fn speed_silence(
     }
 
     Ok(())
+}
+
+// ── Waveform extraction ──────────────────────────────
+
+pub async fn extract_waveform(
+    ffmpeg_path: &str,
+    input: &str,
+    target_peaks: usize,
+) -> Result<Vec<f32>, String> {
+    // Extract raw mono audio at 8kHz as f32le
+    let output = Command::new(ffmpeg_path)
+        .args([
+            "-i", input,
+            "-ac", "1",
+            "-ar", "8000",
+            "-f", "f32le",
+            "-acodec", "pcm_f32le",
+            "pipe:1",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await
+        .map_err(|e| format!("Waveform extraction failed: {}", e))?;
+
+    let raw = output.stdout;
+    if raw.len() < 4 {
+        return Ok(vec![0.0; target_peaks]);
+    }
+
+    // Convert bytes to f32 samples
+    let sample_count = raw.len() / 4;
+    let samples: Vec<f32> = (0..sample_count)
+        .map(|i| {
+            let bytes = [raw[i * 4], raw[i * 4 + 1], raw[i * 4 + 2], raw[i * 4 + 3]];
+            f32::from_le_bytes(bytes)
+        })
+        .collect();
+
+    // Downsample to target_peaks by taking max absolute value per window
+    let window_size = (samples.len() / target_peaks).max(1);
+    let peaks: Vec<f32> = samples
+        .chunks(window_size)
+        .map(|chunk| {
+            chunk
+                .iter()
+                .map(|s| s.abs())
+                .fold(0.0f32, f32::max)
+        })
+        .collect();
+
+    Ok(peaks)
+}
+
+// ── Full analysis (waveform + silence detection) ─────
+
+pub async fn analyze(
+    ffmpeg_path: &str,
+    ffprobe_path: &str,
+    input: &str,
+    noise_db: f64,
+    min_silence_duration: f64,
+    failure_tolerance: f64,
+    edge_padding: f64,
+    min_loud_duration: f64,
+) -> Result<AnalysisResult, String> {
+    // Get duration
+    let duration = get_duration(ffprobe_path, input).await?;
+
+    // Run waveform extraction and silence detection concurrently
+    let waveform_fut = extract_waveform(ffmpeg_path, input, 2000);
+    let silence_fut = detect_silence_raw(ffmpeg_path, input, noise_db, min_silence_duration);
+
+    let (waveform_result, silence_result) = tokio::join!(waveform_fut, silence_fut);
+    let waveform = waveform_result?;
+    let raw_intervals = silence_result?;
+
+    // Post-process
+    let mut silence_intervals = post_process_intervals(
+        raw_intervals,
+        failure_tolerance,
+        edge_padding,
+        duration,
+    );
+
+    if min_loud_duration > 0.0 && !silence_intervals.is_empty() {
+        silence_intervals = merge_short_loud_into_silence(
+            silence_intervals,
+            min_loud_duration,
+            duration,
+        );
+    }
+
+    let silence_duration: f64 = silence_intervals.iter().map(|[s, e]| e - s).sum();
+    let cut_count = silence_intervals.len();
+    let estimated_output = duration - silence_duration;
+
+    Ok(AnalysisResult {
+        duration,
+        waveform,
+        silence_intervals,
+        silence_duration,
+        estimated_output,
+        cut_count,
+    })
+}
+
+// ── Raw silence detection (no event channel) ─────────
+
+async fn detect_silence_raw(
+    ffmpeg_path: &str,
+    input: &str,
+    noise_db: f64,
+    min_duration: f64,
+) -> Result<Vec<[f64; 2]>, String> {
+    let mut child = Command::new(ffmpeg_path)
+        .args([
+            "-i", input,
+            "-af", &format!("silencedetect=noise={}dB:d={}", noise_db, min_duration),
+            "-f", "null", "-",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to start ffmpeg: {}", e))?;
+
+    let stderr = child.stderr.take().unwrap();
+    let reader = BufReader::new(stderr);
+    let mut lines = reader.lines();
+
+    let start_re = Regex::new(r"silence_start:\s*(\d+\.?\d*)").unwrap();
+    let end_re = Regex::new(r"silence_end:\s*(\d+\.?\d*)").unwrap();
+
+    let mut intervals: Vec<[f64; 2]> = Vec::new();
+    let mut current_start: Option<f64> = None;
+
+    while let Ok(Some(line)) = lines.next_line().await {
+        if let Some(caps) = start_re.captures(&line) {
+            current_start = caps[1].parse().ok();
+        }
+        if let Some(caps) = end_re.captures(&line) {
+            if let (Some(start), Some(end)) = (current_start.take(), caps[1].parse::<f64>().ok()) {
+                intervals.push([start, end]);
+            }
+        }
+    }
+
+    let status = child.wait().await.map_err(|e| format!("ffmpeg failed: {}", e))?;
+    if !status.success() {
+        return Err("FFmpeg silence detection failed".to_string());
+    }
+
+    Ok(intervals)
+}
+
+// ── Audio preview extraction ─────────────────────────
+
+pub async fn extract_audio_segment(
+    ffmpeg_path: &str,
+    input: &str,
+    start_time: f64,
+    duration: f64,
+) -> Result<String, String> {
+    use base64::Engine;
+
+    let output = Command::new(ffmpeg_path)
+        .args([
+            "-ss", &format!("{:.3}", start_time),
+            "-i", input,
+            "-t", &format!("{:.3}", duration),
+            "-ac", "1",
+            "-ar", "44100",
+            "-f", "wav",
+            "-acodec", "pcm_s16le",
+            "pipe:1",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await
+        .map_err(|e| format!("Audio preview failed: {}", e))?;
+
+    if output.stdout.is_empty() {
+        return Err("No audio data extracted".to_string());
+    }
+
+    Ok(base64::engine::general_purpose::STANDARD.encode(&output.stdout))
 }
 
 // ── Video info (ffprobe JSON) ────────────────────────

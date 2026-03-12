@@ -17,7 +17,7 @@
 
   <div class="setting">
     <div class="setting-header">
-      <label>Silence Threshold</label>
+      <label title="Audio level below which sound is considered silence. Lower = more sensitive.">How quiet is silence?</label>
       <span class="value">{noiseDb} dB</span>
     </div>
     <input type="range" min="-60" max="-10" step="1" bind:value={noiseDb} />
@@ -25,7 +25,7 @@
 
   <div class="setting">
     <div class="setting-header">
-      <label>Min Silence Duration</label>
+      <label title="Shortest silence gap that will be detected and removed.">Minimum gap to cut</label>
       <span class="value">{minSilenceDuration.toFixed(1)}s</span>
     </div>
     <input
@@ -39,8 +39,8 @@
 
   <div class="setting">
     <div class="setting-header">
-      <label>Failure Tolerance</label>
-      <span class="value">{failureTolerance.toFixed(2)}</span>
+      <label title="Combine nearby silent regions closer than this distance into one cut.">Merge nearby cuts</label>
+      <span class="value">{failureTolerance.toFixed(2)}s</span>
     </div>
     <input
       type="range"
@@ -53,7 +53,7 @@
 
   <div class="setting">
     <div class="setting-header">
-      <label>Edge Padding</label>
+      <label title="Keep this much audio before and after each cut to avoid clipping words.">Breathing room</label>
       <span class="value">{edgePadding.toFixed(1)}s</span>
     </div>
     <input
