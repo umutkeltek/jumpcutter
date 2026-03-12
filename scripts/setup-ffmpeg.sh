@@ -5,7 +5,8 @@
 set -e
 
 BINARIES_DIR="src-tauri/binaries"
-TARGET=$(rustc -vV | grep host | awk '{print $2}')
+# Accept target override via argument or env, otherwise detect from rustc
+TARGET="${1:-${TAURI_TARGET:-$(rustc -vV | grep host | awk '{print $2}')}}"
 
 echo "Setting up FFmpeg for target: $TARGET"
 
@@ -31,10 +32,16 @@ if [[ "$TARGET" == *"windows"* ]]; then
     SUFFIX=".exe"
 fi
 
-ln -sf "$FFMPEG_PATH" "$BINARIES_DIR/ffmpeg-${TARGET}${SUFFIX}"
-ln -sf "$FFPROBE_PATH" "$BINARIES_DIR/ffprobe-${TARGET}${SUFFIX}"
-
-echo "Linked:"
+# In CI, copy the actual binaries; locally, symlink for convenience
+if [ -n "$CI" ]; then
+    cp "$FFMPEG_PATH" "$BINARIES_DIR/ffmpeg-${TARGET}${SUFFIX}"
+    cp "$FFPROBE_PATH" "$BINARIES_DIR/ffprobe-${TARGET}${SUFFIX}"
+    echo "Copied:"
+else
+    ln -sf "$FFMPEG_PATH" "$BINARIES_DIR/ffmpeg-${TARGET}${SUFFIX}"
+    ln -sf "$FFPROBE_PATH" "$BINARIES_DIR/ffprobe-${TARGET}${SUFFIX}"
+    echo "Linked:"
+fi
 echo "  ffmpeg  -> $BINARIES_DIR/ffmpeg-${TARGET}${SUFFIX}"
 echo "  ffprobe -> $BINARIES_DIR/ffprobe-${TARGET}${SUFFIX}"
 echo "Done!"

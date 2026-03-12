@@ -2,10 +2,10 @@ name: Build & Release
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     tags: ["v*"]
   pull_request:
-    branches: [master]
+    branches: [main]
 
 permissions:
   contents: write
@@ -42,16 +42,15 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install ffmpeg
-          bash scripts/setup-ffmpeg.sh
+          bash scripts/setup-ffmpeg.sh ${{ matrix.target }}
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
         run: |
           choco install ffmpeg -y
-          $target = rustc -vV | Select-String "host:" | ForEach-Object { $_.ToString().Split(" ")[1] }
           New-Item -ItemType Directory -Force -Path src-tauri/binaries
-          Copy-Item (Get-Command ffmpeg).Source "src-tauri/binaries/ffmpeg-$target.exe"
-          Copy-Item (Get-Command ffprobe).Source "src-tauri/binaries/ffprobe-$target.exe"
+          Copy-Item (Get-Command ffmpeg).Source "src-tauri/binaries/ffmpeg-${{ matrix.target }}.exe"
+          Copy-Item (Get-Command ffprobe).Source "src-tauri/binaries/ffprobe-${{ matrix.target }}.exe"
 
       - name: Install frontend dependencies
         run: npm ci
